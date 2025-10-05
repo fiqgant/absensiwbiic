@@ -121,23 +121,16 @@ export default function Home() {
   const [msg, setMsg] = useState("");
 
   // Auto-retry registrasi jika deviceId sudah ada (mis. reload halaman)
+  // di Home.jsx
   useEffect(() => {
-    let cancelled = false;
-    const go = async () => {
-      if (!deviceId || regStatus !== "idle") return;
-      try {
-        setRegStatus("registering");
-        await registerDevice(deviceId);
-        if (!cancelled) setRegStatus("ok");
-      } catch {
-        if (!cancelled) setRegStatus("error");
-      }
-    };
-    go();
-    return () => {
-      cancelled = true;
-    };
-  }, [deviceId, regStatus]);
+    if (regStatus === "registering") {
+      const t = setTimeout(() => {
+        // kalau 12 detik gak selesai, anggap error
+        setRegStatus((s) => (s === "registering" ? "error" : s));
+      }, 12000);
+      return () => clearTimeout(t);
+    }
+  }, [regStatus]);
 
   // Lokasi default saat data lokasi tersedia
   useEffect(() => {
