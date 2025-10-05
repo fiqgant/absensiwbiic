@@ -1,5 +1,5 @@
 import Button from "./Button";
-import { NavLink, Link } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
 const linkClass =
   "text-neutral-300 hover:text-white px-2 py-1 rounded-md transition-colors";
@@ -21,7 +21,7 @@ export default function Topbar({ admin, onLogout }) {
             Mahasiswa
           </NavLink>
 
-          {admin ? (
+          {admin && (
             <>
               <NavLink
                 to="/admin/attendance"
@@ -61,13 +61,13 @@ export default function Topbar({ admin, onLogout }) {
 
               <span className="text-neutral-600">|</span>
               <span className="text-neutral-400">{admin.email}</span>
-              <Button onClick={onLogout}>Logout</Button>
+              {/* Penting: type="button" supaya tidak submit form */}
+              <Button type="button" onClick={onLogout}>
+                Logout
+              </Button>
             </>
-          ) : (
-            <Link to="/admin/login" className="text-blue-400 underline">
-              Login Admin
-            </Link>
           )}
+          {/* Tidak ada lagi link "Login Admin" di sini */}
         </div>
       </div>
     </div>
