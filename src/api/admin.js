@@ -60,3 +60,5 @@ export const patchAttendance = (id, payload) =>
 
 export const deleteAttendance = (id) =>
   api.delete(`/api/admin/attendance/${id}`).then((r) => r.data);
+
+export const fetchList = () => api.get("/api/admin/list").then((r) => r.data);

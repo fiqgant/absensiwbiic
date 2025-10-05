@@ -42,6 +42,15 @@ export default function Topbar({ admin, onLogout }) {
               </NavLink>
 
               <NavLink
+                to="/admin/report"
+                className={({ isActive }) =>
+                  `${linkClass} ${isActive ? activeClass : ""}`
+                }
+              >
+                Report
+              </NavLink>
+
+              <NavLink
                 to="/admin/locations"
                 className={({ isActive }) =>
                   `${linkClass} ${isActive ? activeClass : ""}`

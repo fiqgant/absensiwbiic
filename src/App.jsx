@@ -9,6 +9,7 @@ import Login from "./pages/admin/Login";
 import Locations from "./pages/admin/Locations";
 import Attendance from "./pages/admin/Attendance";
 import Compare from "./pages/admin/Compare";
+import Report from "./pages/admin/Report";
 
 export default function App() {
   const { ready, admin, setToken, reload } = useAuth();
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/admin/attendance" element={<Attendance />} />
           <Route path="/admin/locations" element={<Locations />} />
           <Route path="/admin/compare" element={<Compare />} />
+          <Route path="/admin/report" element={<Report />} />
         </Route>
 
         <Route
