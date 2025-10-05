@@ -150,10 +150,19 @@ export default function Home() {
   );
 
   const defaultCenter = useMemo(() => {
+    // Kalau sudah dapat GPS, pakai ini dulu
+    if (
+      geo.status === "ok" &&
+      Number.isFinite(geo.lat) &&
+      Number.isFinite(geo.lon)
+    ) {
+      return [geo.lat, geo.lon];
+    }
+    // Kalau belum ada GPS, fallback ke lokasi terpilih
     if (selectedLoc) return [Number(selectedLoc.lat), Number(selectedLoc.lon)];
-    if (geo.lat != null && geo.lon != null) return [geo.lat, geo.lon];
-    return [-6.2, 106.816666]; // Jakarta fallback
-  }, [selectedLoc, geo.lat, geo.lon]);
+    // Fallback akhir: Jakarta
+    return [-6.2, 106.816666];
+  }, [selectedLoc, geo.status, geo.lat, geo.lon]);
 
   const getGPS = () => {
     setMsg("");
