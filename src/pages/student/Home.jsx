@@ -427,7 +427,7 @@ export default function Home() {
                 value={form.nim}
                 onChange={onChangeNIM}
                 inputMode="numeric"
-                pattern="^\\d+$"
+                pattern="[0-9]+"
                 placeholder="contoh: 23123456"
                 required
               />
