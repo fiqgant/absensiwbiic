@@ -1,17 +1,10 @@
-// src/api/admin.js
 import { api } from "./client";
 
-/* =========================
-   AUTH
-   ========================= */
 export const loginAdmin = (email, password) =>
   api.post("/api/admin/login", { email, password }).then((r) => r.data);
 
 export const me = () => api.get("/api/admin/me").then((r) => r.data);
 
-/* =========================
-   LOCATIONS (ADMIN)
-   ========================= */
 export const listLocations = () =>
   api.get("/api/admin/locations").then((r) => r.data.locations);
 
@@ -29,10 +22,6 @@ export const getDailyCompare = () =>
 
 export const fetchList = () => api.get("/api/admin/list").then((r) => r.data);
 
-/* =========================
-   ATTENDANCE (Dump utk FE filter)
-   ========================= */
-// GET /api/admin/attendance-all?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&max=20000
 export const fetchAttendanceAll = ({ date_from, date_to, max = 20000 }) =>
   api
     .get("/api/admin/attendance-all", {
@@ -40,10 +29,6 @@ export const fetchAttendanceAll = ({ date_from, date_to, max = 20000 }) =>
     })
     .then((r) => ({ rows: r.data?.rows ?? [] }));
 
-/* =========================
-   EXPORT (range tanggal saja)
-   ========================= */
-// GET /api/admin/export-range?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
 export const exportRange = ({ date_from, date_to }) =>
   api
     .get("/api/admin/export-range", {
@@ -52,9 +37,6 @@ export const exportRange = ({ date_from, date_to }) =>
     })
     .then((r) => r.data);
 
-/* =========================
-   PATCH / DELETE attendance
-   ========================= */
 export const patchAttendance = (id, payload) =>
   api
     .patch(`/api/admin/attendance/${id}`, payload)

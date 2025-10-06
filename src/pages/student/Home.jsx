@@ -1,4 +1,3 @@
-// src/pages/public/Home.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -12,7 +11,6 @@ import Input from "../../components/Input";
 import Select from "../../components/Select";
 import Button from "../../components/Button";
 
-// Leaflet
 import {
   MapContainer,
   TileLayer,
@@ -21,10 +19,53 @@ import {
   Popup,
   useMap,
 } from "react-leaflet";
-// NOTE: pastikan sudah import "leaflet/dist/leaflet.css" di main.jsx
+
+function isGoogleDriveUrl(raw) {
+  if (!raw) return false;
+  const urlStr = String(raw).trim();
+  try {
+    const u = new URL(urlStr);
+
+    // wajib https & host drive/docs
+    const allowedHosts = new Set(["drive.google.com", "docs.google.com"]);
+    if (u.protocol !== "https:" || !allowedHosts.has(u.hostname)) return false;
+
+    const p = u.pathname;
+
+    // izinkan format umum Google Drive/Docs
+    const ok =
+      p.startsWith("/file/d/") || // file share
+      p.startsWith("/open") || // open?id=...
+      p.startsWith("/folders/") || // old folders
+      p.startsWith("/drive/folders/") || // new folders
+      p.startsWith("/uc") || // uc?id=...
+      p.startsWith("/document/") || // Docs
+      p.startsWith("/spreadsheets/") || // Sheets
+      p.startsWith("/presentation/"); // Slides
+
+    if (!ok) return false;
+
+    // kalau butuh id, terima dari path /d/<ID> atau query ?id=
+    if (
+      p.includes("/file/d/") ||
+      p.includes("/drive/folders/") ||
+      p.includes("/folders/") ||
+      p.startsWith("/uc") ||
+      p.startsWith("/open")
+    ) {
+      // minimal punya ID di path atau query
+      const hasIdInPath = /\/(d|folders)\/[^/?#]+/.test(p);
+      const hasIdQuery = u.searchParams.has("id");
+      if (!hasIdInPath && !hasIdQuery) return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function getDeviceId() {
-  // Aman untuk browser tanpa localStorage/crypto
   try {
     let id = localStorage.getItem("device_id");
     if (!id) {
@@ -39,7 +80,6 @@ function getDeviceId() {
     }
     return id;
   } catch {
-    // fallback tanpa localStorage
     return (
       "dev-" + (Date.now().toString(16) + Math.random().toString(16).slice(2))
     );
@@ -84,7 +124,6 @@ const FASILITATORS = [
 ];
 
 export default function Home() {
-  // Device ID & status registrasi (server reset harian)
   const [deviceId, setDeviceId] = useState(() => {
     try {
       return localStorage.getItem("device_id") || "";
@@ -92,7 +131,7 @@ export default function Home() {
       return "";
     }
   });
-  const [regStatus, setRegStatus] = useState("idle"); // idle | registering | ok | error
+  const [regStatus, setRegStatus] = useState("idle");
 
   const { data: locations = [] } = useQuery({
     queryKey: ["locs-public"],
@@ -120,19 +159,15 @@ export default function Home() {
   const [photo, setPhoto] = useState(null);
   const [msg, setMsg] = useState("");
 
-  // Auto-retry registrasi jika deviceId sudah ada (mis. reload halaman)
-  // di Home.jsx
   useEffect(() => {
     if (regStatus === "registering") {
       const t = setTimeout(() => {
-        // kalau 12 detik gak selesai, anggap error
         setRegStatus((s) => (s === "registering" ? "error" : s));
       }, 12000);
       return () => clearTimeout(t);
     }
   }, [regStatus]);
 
-  // Lokasi default saat data lokasi tersedia
   useEffect(() => {
     if (!locId && locations.length) setLocId(String(locations[0].id));
   }, [locations, locId]);
@@ -143,7 +178,6 @@ export default function Home() {
   );
 
   const defaultCenter = useMemo(() => {
-    // Kalau sudah dapat GPS, pakai ini dulu
     if (
       geo.status === "ok" &&
       Number.isFinite(geo.lat) &&
@@ -151,9 +185,7 @@ export default function Home() {
     ) {
       return [geo.lat, geo.lon];
     }
-    // Kalau belum ada GPS, fallback ke lokasi terpilih
     if (selectedLoc) return [Number(selectedLoc.lat), Number(selectedLoc.lon)];
-    // Fallback akhir: Jakarta
     return [-6.2, 106.816666];
   }, [selectedLoc, geo.status, geo.lat, geo.lon]);
 
@@ -186,7 +218,6 @@ export default function Home() {
     );
   };
 
-  // NIM: angka saja
   const onChangeNIM = (e) => {
     const onlyDigits = String(e.target.value || "").replace(/\D+/g, "");
     setForm((f) => ({ ...f, nim: onlyDigits }));
@@ -243,6 +274,29 @@ export default function Home() {
       finalFasilitator = fasilitatorOther.trim();
     }
 
+    let trimmedLinkGdrive = "";
+    if (jenis === "sore") {
+      trimmedLinkGdrive = String(soreExtra.link_gdrive || "").trim();
+      if (!trimmedLinkGdrive) {
+        setMsg("Link GDrive Foto Diskusi wajib diisi.");
+        return;
+      }
+      if (!isGoogleDriveUrl(trimmedLinkGdrive)) {
+        setMsg(
+          "Link GDrive Foto Diskusi harus berupa tautan Google Drive yang valid."
+        );
+        return;
+      }
+
+      const trimmedLinkKegiatan = String(soreExtra.link_kegiatan || "").trim();
+      if (trimmedLinkKegiatan && !isGoogleDriveUrl(trimmedLinkKegiatan)) {
+        setMsg(
+          "Link Foto Kegiatan (jika diisi) harus tautan Google Drive/Docs yang valid."
+        );
+        return;
+      }
+    }
+
     try {
       const token = await issueToken({
         device_id: deviceId,
@@ -266,9 +320,12 @@ export default function Home() {
       fd.append("nama_fasilitator", finalFasilitator);
 
       if (jenis === "sore") {
-        fd.append("hasil_diskusi", soreExtra.hasil_diskusi);
-        fd.append("link_gdrive", soreExtra.link_gdrive);
-        fd.append("link_kegiatan", soreExtra.link_kegiatan);
+        fd.append("hasil_diskusi", (soreExtra.hasil_diskusi || "").trim());
+        fd.append("link_gdrive", trimmedLinkGdrive);
+        fd.append(
+          "link_kegiatan",
+          String(soreExtra.link_kegiatan || "").trim()
+        );
       }
       fd.append("photo", photo);
 
@@ -445,7 +502,6 @@ export default function Home() {
                 setForm((f) => ({ ...f, semester: e.target.value }))
               }
             >
-              {/* kalau mau persis seperti semula (1,2,3) ganti opsi di bawah ini */}
               <option value="1">1</option>
               <option value="3">3</option>
               <option value="5">5</option>
@@ -512,15 +568,74 @@ export default function Home() {
                 label="Link GDrive Foto Diskusi"
                 value={soreExtra.link_gdrive}
                 onChange={(e) =>
-                  setSoreExtra((p) => ({ ...p, link_gdrive: e.target.value }))
+                  setSoreExtra((p) => ({
+                    ...p,
+                    link_gdrive: e.target.value.trim(),
+                  }))
                 }
+                placeholder="Contoh: https://drive.google.com/file/d/FILE_ID/view"
+                required
+                inputMode="url"
+                // hanya https + drive/docs + pola path yang diizinkan
+                pattern={
+                  "^https://(drive|docs)\\.google\\.com/(?:" +
+                  "file/d/[^/?#]+(?:/[^?#]*)?" +
+                  "|" + // file/d/<ID>/...
+                  "open\\?id=[^&\\s]+" +
+                  "|" + // open?id=<ID>
+                  "(?:drive/)?folders/[^/?#]+" +
+                  "|" + // folders/<ID> atau drive/folders/<ID>
+                  "uc\\?id=[^&\\s]+" +
+                  "|" + // uc?id=<ID>
+                  "document/[^\\s]+" +
+                  "|" + // Docs
+                  "spreadsheets/[^\\s]+" +
+                  "|" + // Sheets
+                  "presentation/[^\\s]+" + // Slides
+                  ")"
+                }
+                onInvalid={(e) => {
+                  e.target.setCustomValidity(
+                    "Harus berupa tautan Google Drive/Docs yang valid (https://drive.google.com/… atau https://docs.google.com/…)."
+                  );
+                }}
+                onInput={(e) => e.currentTarget.setCustomValidity("")}
               />
               <Input
                 label="Link Foto Kegiatan"
                 value={soreExtra.link_kegiatan}
                 onChange={(e) =>
-                  setSoreExtra((p) => ({ ...p, link_kegiatan: e.target.value }))
+                  setSoreExtra((p) => ({
+                    ...p,
+                    link_kegiatan: e.target.value.trim(),
+                  }))
                 }
+                placeholder="Boleh kosong atau isi URL Google Drive/Docs"
+                inputMode="url"
+                // opsional: boleh kosong, kalau diisi wajib gdrive/docs
+                pattern={
+                  "^$|^https://(drive|docs)\\.google\\.com/(?:" +
+                  "file/d/[^/?#]+(?:/[^?#]*)?" +
+                  "|" + // file/d/<ID>/...
+                  "open\\?id=[^&\\s]+" +
+                  "|" + // open?id=<ID>
+                  "(?:drive/)?folders/[^/?#]+" +
+                  "|" + // folders/<ID> atau drive/folders/<ID>
+                  "uc\\?id=[^&\\s]+" +
+                  "|" + // uc?id=<ID>
+                  "document/[^\\s]+" +
+                  "|" + // Docs
+                  "spreadsheets/[^\\s]+" +
+                  "|" + // Sheets
+                  "presentation/[^\\s]+" + // Slides
+                  ")"
+                }
+                onInvalid={(e) => {
+                  e.target.setCustomValidity(
+                    "Jika diisi, harus tautan Google Drive/Docs yang valid (https://drive.google.com/… atau https://docs.google.com/…)."
+                  );
+                }}
+                onInput={(e) => e.currentTarget.setCustomValidity("")}
               />
             </div>
           )}
