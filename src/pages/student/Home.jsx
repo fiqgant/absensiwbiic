@@ -53,7 +53,6 @@ function isGoogleDriveUrl(raw) {
       p.startsWith("/uc") ||
       p.startsWith("/open")
     ) {
-      // minimal punya ID di path atau query
       const hasIdInPath = /\/(d|folders)\/[^/?#]+/.test(p);
       const hasIdQuery = u.searchParams.has("id");
       if (!hasIdInPath && !hasIdQuery) return false;
@@ -158,6 +157,30 @@ export default function Home() {
 
   const [photo, setPhoto] = useState(null);
   const [msg, setMsg] = useState("");
+
+  // ==== Real-time validity (sore) ====
+  const hasilDiskusiTrim = useMemo(
+    () => String(soreExtra.hasil_diskusi || "").trim(),
+    [soreExtra.hasil_diskusi]
+  );
+  const hasilDiskusiLen = hasilDiskusiTrim.length;
+  const isHasilDiskusiValid = hasilDiskusiLen >= 120;
+
+  const linkGDriveTrim = useMemo(
+    () => String(soreExtra.link_gdrive || "").trim(),
+    [soreExtra.link_gdrive]
+  );
+  const isLinkGDriveFilled = linkGDriveTrim.length > 0;
+  const isLinkGDriveValid =
+    isLinkGDriveFilled && isGoogleDriveUrl(linkGDriveTrim);
+
+  const linkKegiatanTrim = useMemo(
+    () => String(soreExtra.link_kegiatan || "").trim(),
+    [soreExtra.link_kegiatan]
+  );
+  const isLinkKegiatanFilled = linkKegiatanTrim.length > 0; // wajib
+  const isLinkKegiatanValid =
+    isLinkKegiatanFilled && isGoogleDriveUrl(linkKegiatanTrim);
 
   useEffect(() => {
     if (regStatus === "registering") {
@@ -276,22 +299,27 @@ export default function Home() {
 
     let trimmedLinkGdrive = "";
     if (jenis === "sore") {
-      trimmedLinkGdrive = String(soreExtra.link_gdrive || "").trim();
-      if (!trimmedLinkGdrive) {
-        setMsg("Link GDrive Foto Diskusi wajib diisi.");
+      // Validasi baru (wajib 120 char + kedua link wajib & gdrive/docs)
+      if (!isHasilDiskusiValid) {
+        setMsg("Hasil Diskusi wajib diisi minimal 120 karakter.");
         return;
       }
-      if (!isGoogleDriveUrl(trimmedLinkGdrive)) {
+
+      trimmedLinkGdrive = linkGDriveTrim;
+      if (!isLinkGDriveValid) {
         setMsg(
-          "Link GDrive Foto Diskusi harus berupa tautan Google Drive yang valid."
+          !isLinkGDriveFilled
+            ? "Link GDrive Foto Diskusi wajib diisi."
+            : "Link GDrive Foto Diskusi harus berupa tautan Google Drive/Docs yang valid."
         );
         return;
       }
 
-      const trimmedLinkKegiatan = String(soreExtra.link_kegiatan || "").trim();
-      if (trimmedLinkKegiatan && !isGoogleDriveUrl(trimmedLinkKegiatan)) {
+      if (!isLinkKegiatanValid) {
         setMsg(
-          "Link Foto Kegiatan (jika diisi) harus tautan Google Drive/Docs yang valid."
+          !isLinkKegiatanFilled
+            ? "Link Foto Kegiatan wajib diisi."
+            : "Link Foto Kegiatan harus tautan Google Drive/Docs yang valid."
         );
         return;
       }
@@ -320,18 +348,17 @@ export default function Home() {
       fd.append("nama_fasilitator", finalFasilitator);
 
       if (jenis === "sore") {
-        fd.append("hasil_diskusi", (soreExtra.hasil_diskusi || "").trim());
+        fd.append("hasil_diskusi", hasilDiskusiTrim);
         fd.append("link_gdrive", trimmedLinkGdrive);
-        fd.append(
-          "link_kegiatan",
-          String(soreExtra.link_kegiatan || "").trim()
-        );
+        fd.append("link_kegiatan", linkKegiatanTrim);
       }
       fd.append("photo", photo);
 
       const res = await submitAttendance(fd);
       setMsg(
-        `✅ ${res.message} • jarak ${res.distance_m} m • lokasi ${res.lokasi.name}`
+        `✅ ${res.message} • jarak ${res.distance_m} m • lokasi ${
+          res.lokasi?.name ?? "-"
+        }`
       );
     } catch (e) {
       const serverMsg =
@@ -557,86 +584,157 @@ export default function Home() {
 
           {jenis === "sore" && (
             <div className="grid gap-3">
-              <Input
-                label="Hasil Diskusi"
-                value={soreExtra.hasil_diskusi}
-                onChange={(e) =>
-                  setSoreExtra((p) => ({ ...p, hasil_diskusi: e.target.value }))
-                }
-              />
-              <Input
-                label="Link GDrive Foto Diskusi"
-                value={soreExtra.link_gdrive}
-                onChange={(e) =>
-                  setSoreExtra((p) => ({
-                    ...p,
-                    link_gdrive: e.target.value.trim(),
-                  }))
-                }
-                placeholder="Contoh: https://drive.google.com/file/d/FILE_ID/view"
-                required
-                inputMode="url"
-                // hanya https + drive/docs + pola path yang diizinkan
-                pattern={
-                  "^https://(drive|docs)\\.google\\.com/(?:" +
-                  "file/d/[^/?#]+(?:/[^?#]*)?" +
-                  "|" + // file/d/<ID>/...
-                  "open\\?id=[^&\\s]+" +
-                  "|" + // open?id=<ID>
-                  "(?:drive/)?folders/[^/?#]+" +
-                  "|" + // folders/<ID> atau drive/folders/<ID>
-                  "uc\\?id=[^&\\s]+" +
-                  "|" + // uc?id=<ID>
-                  "document/[^\\s]+" +
-                  "|" + // Docs
-                  "spreadsheets/[^\\s]+" +
-                  "|" + // Sheets
-                  "presentation/[^\\s]+" + // Slides
-                  ")"
-                }
-                onInvalid={(e) => {
-                  e.target.setCustomValidity(
-                    "Harus berupa tautan Google Drive/Docs yang valid (https://drive.google.com/… atau https://docs.google.com/…)."
-                  );
-                }}
-                onInput={(e) => e.currentTarget.setCustomValidity("")}
-              />
-              <Input
-                label="Link Foto Kegiatan"
-                value={soreExtra.link_kegiatan}
-                onChange={(e) =>
-                  setSoreExtra((p) => ({
-                    ...p,
-                    link_kegiatan: e.target.value.trim(),
-                  }))
-                }
-                placeholder="Boleh kosong atau isi URL Google Drive/Docs"
-                inputMode="url"
-                // opsional: boleh kosong, kalau diisi wajib gdrive/docs
-                pattern={
-                  "^$|^https://(drive|docs)\\.google\\.com/(?:" +
-                  "file/d/[^/?#]+(?:/[^?#]*)?" +
-                  "|" + // file/d/<ID>/...
-                  "open\\?id=[^&\\s]+" +
-                  "|" + // open?id=<ID>
-                  "(?:drive/)?folders/[^/?#]+" +
-                  "|" + // folders/<ID> atau drive/folders/<ID>
-                  "uc\\?id=[^&\\s]+" +
-                  "|" + // uc?id=<ID>
-                  "document/[^\\s]+" +
-                  "|" + // Docs
-                  "spreadsheets/[^\\s]+" +
-                  "|" + // Sheets
-                  "presentation/[^\\s]+" + // Slides
-                  ")"
-                }
-                onInvalid={(e) => {
-                  e.target.setCustomValidity(
-                    "Jika diisi, harus tautan Google Drive/Docs yang valid (https://drive.google.com/… atau https://docs.google.com/…)."
-                  );
-                }}
-                onInput={(e) => e.currentTarget.setCustomValidity("")}
-              />
+              {/* Hasil Diskusi: wajib & minLength 120 + indikator realtime */}
+              <div>
+                <Input
+                  label="Hasil Diskusi"
+                  value={soreExtra.hasil_diskusi}
+                  onChange={(e) =>
+                    setSoreExtra((p) => ({
+                      ...p,
+                      hasil_diskusi: e.target.value,
+                    }))
+                  }
+                  required
+                  minLength={120}
+                  onInvalid={(e) => {
+                    e.target.setCustomValidity(
+                      "Hasil Diskusi wajib diisi minimal 120 karakter."
+                    );
+                  }}
+                  onInput={(e) => e.currentTarget.setCustomValidity("")}
+                  placeholder="Tuliskan ringkasan hasil diskusi (≥120 karakter)"
+                />
+                <div
+                  className={
+                    "text-xs mt-1 " +
+                    (hasilDiskusiLen === 0
+                      ? "text-neutral-500"
+                      : isHasilDiskusiValid
+                      ? "text-green-400"
+                      : "text-amber-400")
+                  }
+                >
+                  Panjang saat ini:{" "}
+                  <span className="font-medium">{hasilDiskusiLen}</span>{" "}
+                  karakter{" "}
+                  {!isHasilDiskusiValid &&
+                    hasilDiskusiLen > 0 &&
+                    `(kurang ${120 - hasilDiskusiLen})`}
+                </div>
+              </div>
+
+              {/* Link GDrive Foto Diskusi: wajib & Google Drive/Docs + indikator */}
+              <div>
+                <Input
+                  label="Link GDrive Foto Diskusi"
+                  value={soreExtra.link_gdrive}
+                  onChange={(e) =>
+                    setSoreExtra((p) => ({
+                      ...p,
+                      link_gdrive: e.target.value.trim(),
+                    }))
+                  }
+                  placeholder="Contoh: https://drive.google.com/file/d/FILE_ID/view"
+                  required
+                  inputMode="url"
+                  pattern={
+                    "^https://(drive|docs)\\.google\\.com/(?:" +
+                    "file/d/[^/?#]+(?:/[^?#]*)?" +
+                    "|" + // file/d/<ID>/...
+                    "open\\?id=[^&\\s]+" +
+                    "|" + // open?id=<ID>
+                    "(?:drive/)?folders/[^/?#]+" +
+                    "|" + // folders/<ID> atau drive/folders/<ID>
+                    "uc\\?id=[^&\\s]+" +
+                    "|" + // uc?id=<ID>
+                    "document/[^\\s]+" +
+                    "|" + // Docs
+                    "spreadsheets/[^\\s]+" +
+                    "|" + // Sheets
+                    "presentation/[^\\s]+" + // Slides
+                    ")"
+                  }
+                  onInvalid={(e) => {
+                    e.target.setCustomValidity(
+                      "Harus berupa tautan Google Drive/Docs yang valid (https://drive.google.com/… atau https://docs.google.com/…)."
+                    );
+                  }}
+                  onInput={(e) => e.currentTarget.setCustomValidity("")}
+                />
+                <div
+                  className={
+                    "text-xs mt-1 " +
+                    (isLinkGDriveFilled
+                      ? isLinkGDriveValid
+                        ? "text-green-400"
+                        : "text-red-400"
+                      : "text-amber-400")
+                  }
+                >
+                  {isLinkGDriveFilled
+                    ? isLinkGDriveValid
+                      ? "✔ Tautan valid (Google Drive/Docs)."
+                      : "✘ Bukan tautan Google Drive/Docs yang valid."
+                    : "• Wajib diisi."}
+                </div>
+              </div>
+
+              {/* Link Foto Kegiatan: wajib & Google Drive/Docs + indikator */}
+              <div>
+                <Input
+                  label="Link Foto Kegiatan"
+                  value={soreExtra.link_kegiatan}
+                  onChange={(e) =>
+                    setSoreExtra((p) => ({
+                      ...p,
+                      link_kegiatan: e.target.value.trim(),
+                    }))
+                  }
+                  placeholder="Wajib: URL Google Drive/Docs"
+                  inputMode="url"
+                  required
+                  pattern={
+                    "^https://(drive|docs)\\.google\\.com/(?:" +
+                    "file/d/[^/?#]+(?:/[^?#]*)?" +
+                    "|" + // file/d/<ID>/...
+                    "open\\?id=[^&\\s]+" +
+                    "|" + // open?id=<ID>
+                    "(?:drive/)?folders/[^/?#]+" +
+                    "|" + // folders/<ID> atau drive/folders/<ID>
+                    "uc\\?id=[^&\\s]+" +
+                    "|" + // uc?id=<ID>
+                    "document/[^\\s]+" +
+                    "|" + // Docs
+                    "spreadsheets/[^\\s]+" +
+                    "|" + // Sheets
+                    "presentation/[^\\s]+" + // Slides
+                    ")"
+                  }
+                  onInvalid={(e) => {
+                    e.target.setCustomValidity(
+                      "Link Foto Kegiatan wajib dan harus tautan Google Drive/Docs yang valid."
+                    );
+                  }}
+                  onInput={(e) => e.currentTarget.setCustomValidity("")}
+                />
+                <div
+                  className={
+                    "text-xs mt-1 " +
+                    (isLinkKegiatanFilled
+                      ? isLinkKegiatanValid
+                        ? "text-green-400"
+                        : "text-red-400"
+                      : "text-amber-400")
+                  }
+                >
+                  {isLinkKegiatanFilled
+                    ? isLinkKegiatanValid
+                      ? "✔ Tautan valid (Google Drive/Docs)."
+                      : "✘ Bukan tautan Google Drive/Docs yang valid."
+                    : "• Wajib diisi."}
+                </div>
+              </div>
             </div>
           )}
 
