@@ -10,7 +10,6 @@ import Locations from "./pages/admin/Locations";
 import Attendance from "./pages/admin/Attendance";
 import Compare from "./pages/admin/Compare";
 import Report from "./pages/admin/Report";
-import { Analytics } from "@vercel/analytics/next";
 
 export default function App() {
   const { ready, admin, setToken, reload } = useAuth();
@@ -26,9 +25,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <Analytics />
       <Topbar admin={admin} onLogout={onLogout} />
-
       <Routes>
         {/* Mahasiswa */}
         <Route path="/" element={<Home />} />
