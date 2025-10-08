@@ -25,27 +25,21 @@ function isGoogleDriveUrl(raw) {
   const urlStr = String(raw).trim();
   try {
     const u = new URL(urlStr);
-
-    // wajib https & host drive/docs
     const allowedHosts = new Set(["drive.google.com", "docs.google.com"]);
     if (u.protocol !== "https:" || !allowedHosts.has(u.hostname)) return false;
 
     const p = u.pathname;
-
-    // izinkan format umum Google Drive/Docs
     const ok =
-      p.startsWith("/file/d/") || // file share
-      p.startsWith("/open") || // open?id=...
-      p.startsWith("/folders/") || // old folders
-      p.startsWith("/drive/folders/") || // new folders
-      p.startsWith("/uc") || // uc?id=...
-      p.startsWith("/document/") || // Docs
-      p.startsWith("/spreadsheets/") || // Sheets
-      p.startsWith("/presentation/"); // Slides
-
+      p.startsWith("/file/d/") ||
+      p.startsWith("/open") ||
+      p.startsWith("/folders/") ||
+      p.startsWith("/drive/folders/") ||
+      p.startsWith("/uc") ||
+      p.startsWith("/document/") ||
+      p.startsWith("/spreadsheets/") ||
+      p.startsWith("/presentation/");
     if (!ok) return false;
 
-    // kalau butuh id, terima dari path /d/<ID> atau query ?id=
     if (
       p.includes("/file/d/") ||
       p.includes("/drive/folders/") ||
@@ -132,9 +126,18 @@ export default function Home() {
   });
   const [regStatus, setRegStatus] = useState("idle");
 
-  const { data: locations = [] } = useQuery({
+  // === Lokasi: fetch HANYA saat diklik ===
+  const {
+    data: locations = [],
+    refetch: refetchLocations,
+    isFetching: isLocLoading,
+    isFetched: isLocFetched,
+  } = useQuery({
     queryKey: ["locs-public"],
     queryFn: getLocationsPublic,
+    enabled: false, // <-- penting: jangan auto fetch
+    staleTime: 0,
+    gcTime: 30 * 60 * 1000,
   });
 
   const [locId, setLocId] = useState("");
@@ -158,7 +161,7 @@ export default function Home() {
   const [photo, setPhoto] = useState(null);
   const [msg, setMsg] = useState("");
 
-  // ==== Real-time validity (sore) ====
+  // ==== Validasi realtime (sore) ====
   const hasilDiskusiTrim = useMemo(
     () => String(soreExtra.hasil_diskusi || "").trim(),
     [soreExtra.hasil_diskusi]
@@ -178,7 +181,7 @@ export default function Home() {
     () => String(soreExtra.link_kegiatan || "").trim(),
     [soreExtra.link_kegiatan]
   );
-  const isLinkKegiatanFilled = linkKegiatanTrim.length > 0; // wajib
+  const isLinkKegiatanFilled = linkKegiatanTrim.length > 0;
   const isLinkKegiatanValid =
     isLinkKegiatanFilled && isGoogleDriveUrl(linkKegiatanTrim);
 
@@ -191,6 +194,7 @@ export default function Home() {
     }
   }, [regStatus]);
 
+  // Set default locId hanya setelah user memuat lokasi
   useEffect(() => {
     if (!locId && locations.length) setLocId(String(locations[0].id));
   }, [locations, locId]);
@@ -252,7 +256,7 @@ export default function Home() {
       const id = getDeviceId();
       setDeviceId(id);
       setRegStatus("registering");
-      await registerDevice(id);
+      await registerDevice(id); // <-- hanya saat tombol diklik
       setRegStatus("ok");
       setMsg("Perangkat terdaftar untuk hari ini. ✔️");
     } catch {
@@ -299,7 +303,6 @@ export default function Home() {
 
     let trimmedLinkGdrive = "";
     if (jenis === "sore") {
-      // Validasi baru (wajib 120 char + kedua link wajib & gdrive/docs)
       if (!isHasilDiskusiValid) {
         setMsg("Hasil Diskusi wajib diisi minimal 120 karakter.");
         return;
@@ -326,6 +329,7 @@ export default function Home() {
     }
 
     try {
+      // API token & submit: hanya saat user klik "Kirim Absensi"
       const token = await issueToken({
         device_id: deviceId,
         nim: form.nim,
@@ -461,12 +465,38 @@ export default function Home() {
             <option value="sore">Sore (16-18)</option>
           </Select>
 
+          {/* Muat lokasi manual */}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              onClick={() => {
+                setMsg("");
+                refetchLocations();
+              }}
+              disabled={isLocLoading}
+            >
+              {isLocLoading
+                ? "Memuat Lokasi..."
+                : isLocFetched
+                ? "Muat Ulang Lokasi"
+                : "Muat Lokasi dari Server"}
+            </Button>
+            <div className="text-xs text-neutral-500">
+              {isLocFetched
+                ? `Lokasi ter-load (${locations.length} item).`
+                : "Klik untuk mengambil daftar lokasi dari server."}
+            </div>
+          </div>
+
           <Select
             label="Lokasi"
             value={locId}
             onChange={(e) => setLocId(e.target.value)}
+            disabled={!isLocFetched || locations.length === 0}
           >
-            <option value="">Pilih lokasi</option>
+            <option value="">
+              {isLocFetched ? "Pilih lokasi" : "Muat lokasi dulu"}
+            </option>
             {locations.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}
@@ -506,7 +536,6 @@ export default function Home() {
               required
             />
 
-            {/* NIM: angka saja */}
             <div>
               <Input
                 label="NIM (angka saja)"
@@ -534,7 +563,6 @@ export default function Home() {
               <option value="5">5</option>
             </Select>
 
-            {/* Nama Kelompok + deskripsi */}
             <div>
               <Input
                 label="Nama Kelompok"
@@ -549,7 +577,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Fasilitator: select + 'Lainnya' */}
             <div>
               <Select
                 label="Nama Fasilitator"
@@ -584,7 +611,6 @@ export default function Home() {
 
           {jenis === "sore" && (
             <div className="grid gap-3">
-              {/* Hasil Diskusi: wajib & minLength 120 + indikator realtime */}
               <div>
                 <Input
                   label="Hasil Diskusi"
@@ -624,7 +650,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Link GDrive Foto Diskusi: wajib & Google Drive/Docs + indikator */}
               <div>
                 <Input
                   label="Link GDrive Foto Diskusi"
@@ -641,18 +666,18 @@ export default function Home() {
                   pattern={
                     "^https://(drive|docs)\\.google\\.com/(?:" +
                     "file/d/[^/?#]+(?:/[^?#]*)?" +
-                    "|" + // file/d/<ID>/...
+                    "|" +
                     "open\\?id=[^&\\s]+" +
-                    "|" + // open?id=<ID>
+                    "|" +
                     "(?:drive/)?folders/[^/?#]+" +
-                    "|" + // folders/<ID> atau drive/folders/<ID>
+                    "|" +
                     "uc\\?id=[^&\\s]+" +
-                    "|" + // uc?id=<ID>
+                    "|" +
                     "document/[^\\s]+" +
-                    "|" + // Docs
+                    "|" +
                     "spreadsheets/[^\\s]+" +
-                    "|" + // Sheets
-                    "presentation/[^\\s]+" + // Slides
+                    "|" +
+                    "presentation/[^\\s]+" +
                     ")"
                   }
                   onInvalid={(e) => {
@@ -680,7 +705,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Link Foto Kegiatan: wajib & Google Drive/Docs + indikator */}
               <div>
                 <Input
                   label="Link Foto Kegiatan"
@@ -697,18 +721,18 @@ export default function Home() {
                   pattern={
                     "^https://(drive|docs)\\.google\\.com/(?:" +
                     "file/d/[^/?#]+(?:/[^?#]*)?" +
-                    "|" + // file/d/<ID>/...
+                    "|" +
                     "open\\?id=[^&\\s]+" +
-                    "|" + // open?id=<ID>
+                    "|" +
                     "(?:drive/)?folders/[^/?#]+" +
-                    "|" + // folders/<ID> atau drive/folders/<ID>
+                    "|" +
                     "uc\\?id=[^&\\s]+" +
-                    "|" + // uc?id=<ID>
+                    "|" +
                     "document/[^\\s]+" +
-                    "|" + // Docs
+                    "|" +
                     "spreadsheets/[^\\s]+" +
-                    "|" + // Sheets
-                    "presentation/[^\\s]+" + // Slides
+                    "|" +
+                    "presentation/[^\\s]+" +
                     ")"
                   }
                   onInvalid={(e) => {
@@ -739,7 +763,6 @@ export default function Home() {
           )}
 
           <div className="grid sm:grid-cols-2 gap-3">
-            {/* Kamera */}
             <label className="block">
               <div className="mb-1 text-sm text-neutral-400">
                 Foto Wajah (ambil dari kamera)
