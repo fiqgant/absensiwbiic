@@ -997,7 +997,7 @@ export default function Home() {
                       "text-sm " + (faceOK ? "text-green-400" : "text-red-400")
                     }
                   >
-                    {faceOK ? "Wajah OK" : "Wajah belum terdeteksi"}
+                    {faceOK ? "Wajah Terdeteksi" : "Wajah belum terdeteksi"}
                   </div>
                 </div>
               )}
