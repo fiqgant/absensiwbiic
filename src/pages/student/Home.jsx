@@ -23,7 +23,7 @@ import {
 const MP_WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
 const MP_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/face_detector/face_detector/float16/1/face_detector.tflite";
+  "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite";
 
 let __mp = null;
 let __fileset = null;
