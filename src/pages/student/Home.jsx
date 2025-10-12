@@ -125,9 +125,9 @@ export default function Home() {
     }
   });
   const [regStatus, setRegStatus] = useState("idle");
-  const [submitting, setSubmitting] = useState(false); // <-- NEW
+  const [submitting, setSubmitting] = useState(false); // hanya kunci submit
 
-  // === Lokasi: fetch HANYA saat diklik ===
+  // === Lokasi: fetch HANYA saat diklik & non-blocking ===
   const {
     data: locations = [],
     refetch: refetchLocations,
@@ -136,10 +136,12 @@ export default function Home() {
   } = useQuery({
     queryKey: ["locs-public"],
     queryFn: getLocationsPublic,
-    enabled: false, // jangan auto fetch
+    enabled: false,         // manual fetch (via tombol)
+    retry: false,           // jangan auto-retry
     staleTime: 0,
     gcTime: 30 * 60 * 1000,
-    retry: false, // <-- NEW: jangan auto-retry diam-diam
+    refetchOnWindowFocus: false,
+    suspense: false,        // penting: jangan trigger Suspense overlay
   });
 
   const [locId, setLocId] = useState("");
@@ -253,7 +255,7 @@ export default function Home() {
 
   const onGetDevice = async () => {
     setMsg("");
-    if (regStatus === "registering") return; // <-- NEW: cegah spam klik
+    if (regStatus === "registering") return; // cegah spam klik
     try {
       const id = getDeviceId();
       setDeviceId(id);
@@ -271,14 +273,12 @@ export default function Home() {
     e.preventDefault();
     setMsg("");
 
-    if (submitting) return; // <-- NEW: cegah double-click
-    setSubmitting(true); // <-- NEW
+    if (submitting) return; // cegah double-click
+    setSubmitting(true);
 
     try {
       if (regStatus !== "ok") {
-        setMsg(
-          'Klik "Get Device ID" terlebih dahulu untuk registrasi perangkat.'
-        );
+        setMsg('Klik "Get Device ID" terlebih dahulu untuk registrasi perangkat.');
         return;
       }
       if (!geo.lat || !geo.lon) {
@@ -376,7 +376,7 @@ export default function Home() {
         "Gagal submit";
       setMsg("❌ " + serverMsg);
     } finally {
-      setSubmitting(false); // <-- NEW
+      setSubmitting(false);
     }
   };
 
@@ -399,8 +399,7 @@ export default function Home() {
               {deviceId ? (
                 <>
                   Device ID:{" "}
-                  <span className="text-neutral-2 00">{deviceId}</span> •
-                  Status:{" "}
+                  <span className="text-neutral-200">{deviceId}</span> • Status:{" "}
                   {regStatus === "ok"
                     ? "Terdaftar hari ini"
                     : regStatus === "registering"
@@ -479,7 +478,7 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setMsg("");
-                if (!isLocLoading) refetchLocations(); // <-- NEW guard
+                if (!isLocLoading) refetchLocations(); // non-blocking
               }}
               disabled={isLocLoading}
             >
@@ -516,7 +515,7 @@ export default function Home() {
           <div>
             <div className="mb-1 text-sm text-neutral-400">Lokasi Saya</div>
             <div className="flex items-center gap-2">
-              <Button type="button" onClick={getGPS} disabled={submitting}>
+              <Button type="button" onClick={getGPS}>
                 Ambil Lokasi
               </Button>
               <div className="text-xs text-neutral-400">
@@ -542,7 +541,6 @@ export default function Home() {
               value={form.nama}
               onChange={(e) => setForm((f) => ({ ...f, nama: e.target.value }))}
               required
-              disabled={submitting}
             />
 
             <div>
@@ -554,7 +552,6 @@ export default function Home() {
                 pattern="[0-9]+"
                 placeholder="contoh: 23123456"
                 required
-                disabled={submitting}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 NIM harus berisi angka saja.
@@ -567,7 +564,6 @@ export default function Home() {
               onChange={(e) =>
                 setForm((f) => ({ ...f, semester: e.target.value }))
               }
-              disabled={submitting}
             >
               <option value="1">1</option>
               <option value="3">3</option>
@@ -582,7 +578,6 @@ export default function Home() {
                   setForm((f) => ({ ...f, nama_kelompok: e.target.value }))
                 }
                 required
-                disabled={submitting}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Apabila belum tergabung dalam kelompok, isi dengan tanda “-”.
@@ -598,7 +593,6 @@ export default function Home() {
                   setForm((f) => ({ ...f, nama_fasilitator: v }));
                   if (v !== "Lainnya") setFasilitatorOther("");
                 }}
-                disabled={submitting}
               >
                 {FASILITATORS.map((name) => (
                   <option key={name} value={name}>
@@ -612,18 +606,17 @@ export default function Home() {
               </div>
             </div>
 
-            {form.nama_fasilitator === "Lainnya" && (
+            {form.nama_fasilitator === "Lainnya" dan (
               <Input
                 label="Isi Nama Fasilitator (Lainnya)"
                 value={fasilitatorOther}
                 onChange={(e) => setFasilitatorOther(e.target.value)}
                 placeholder="Nama fasilitator"
-                disabled={submitting}
               />
             )}
           </div>
 
-          {jenis === "sore" && (
+          {jenis === "sore" dan (
             <div className="grid gap-3">
               <div>
                 <Input
@@ -644,7 +637,6 @@ export default function Home() {
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
                   placeholder="Tuliskan ringkasan hasil diskusi (≥120 karakter)"
-                  disabled={submitting}
                 />
                 <div
                   className={
@@ -701,7 +693,6 @@ export default function Home() {
                     );
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
-                  disabled={submitting}
                 />
                 <div
                   className={
@@ -757,7 +748,6 @@ export default function Home() {
                     );
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
-                  disabled={submitting}
                 />
                 <div
                   className={
@@ -791,7 +781,7 @@ export default function Home() {
                 onChange={(e) =>
                   setPhoto((e.target.files && e.target.files[0]) || null)
                 }
-                disabled={submitting}
+                disabled={submitting} // hanya file input yang dikunci saat submit
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Saat dibuka di HP, ini akan langsung menawarkan kamera.
@@ -800,11 +790,7 @@ export default function Home() {
           </div>
 
           {msg && <div className="text-sm">{msg}</div>}
-          <Button
-            className="w-full"
-            type="submit"
-            disabled={submitting || regStatus !== "ok"}
-          >
+          <Button className="w-full" type="submit" disabled={submitting || regStatus !== "ok"}>
             {regStatus !== "ok"
               ? "Kirim Absensi (perlu registrasi device)"
               : submitting
