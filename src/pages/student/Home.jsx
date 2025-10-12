@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   getLocationsPublic,
@@ -127,11 +127,33 @@ export default function Home() {
   const [regStatus, setRegStatus] = useState("idle");
   const [submitting, setSubmitting] = useState(false);
 
+  // === Overlay manual untuk SEMUA aksi tombol ===
+  const [blocking, setBlocking] = useState(false);
+  const [overlayText, setOverlayText] = useState("Memproses…");
+  const overlayTimeoutRef = useRef(null);
+  const showOverlay = blocking || submitting;
+
+  const startOverlay = (text = "Memproses…", timeoutMs = 15000) => {
+    setOverlayText(text);
+    setBlocking(true);
+    if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current);
+    // safety: auto-matikan overlay kalau aksi menggantung
+    overlayTimeoutRef.current = setTimeout(() => {
+      setBlocking(false);
+    }, timeoutMs);
+  };
+  const stopOverlay = () => {
+    setBlocking(false);
+    if (overlayTimeoutRef.current) {
+      clearTimeout(overlayTimeoutRef.current);
+      overlayTimeoutRef.current = null;
+    }
+  };
+
   // === Lokasi: fetch HANYA saat diklik ===
   const {
     data: locations = [],
     refetch: refetchLocations,
-    isFetching: isLocLoading,
     isFetched: isLocFetched,
   } = useQuery({
     queryKey: ["locs-public"],
@@ -217,42 +239,37 @@ export default function Home() {
     return [-6.2, 106.816666];
   }, [selectedLoc, geo.status, geo.lat, geo.lon]);
 
-  // === Overlay global muncul saat ada aksi in-flight:
-  // - register device
-  // - muat lokasi
-  // - ambil GPS
-  // - submit absensi
-  const showOverlay =
-    submitting ||
-    regStatus === "registering" ||
-    isLocLoading ||
-    geo.status === "requesting";
-
   const getGPS = () => {
     setMsg("");
+    setOverlayText("Mengambil lokasi GPS…");
+    startOverlay("Mengambil lokasi GPS…", 12000);
     if (!("geolocation" in navigator)) {
       setGeo({
         lat: null,
         lon: null,
         status: "error: Geolocation tidak didukung",
       });
+      stopOverlay();
       return;
     }
-    setGeo((g) => ({ ...g, status: "requesting" }));
     navigator.geolocation.getCurrentPosition(
-      (pos) =>
+      (pos) => {
         setGeo({
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
           status: "ok",
-        }),
-      (err) =>
+        });
+        stopOverlay();
+      },
+      (err) => {
         setGeo({
           lat: null,
           lon: null,
           status:
             "error: " + (err && err.message ? err.message : "tidak diketahui"),
-        }),
+        });
+        stopOverlay();
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
@@ -265,6 +282,8 @@ export default function Home() {
   const onGetDevice = async () => {
     setMsg("");
     if (regStatus === "registering") return;
+    setOverlayText("Mendaftarkan perangkat…");
+    startOverlay("Mendaftarkan perangkat…", 15000);
     try {
       const id = getDeviceId();
       setDeviceId(id);
@@ -275,6 +294,19 @@ export default function Home() {
     } catch {
       setRegStatus("error");
       setMsg("Gagal registrasi perangkat. Coba lagi.");
+    } finally {
+      stopOverlay();
+    }
+  };
+
+  const onLoadLocations = async () => {
+    setMsg("");
+    setOverlayText("Memuat lokasi…");
+    startOverlay("Memuat lokasi…", 15000);
+    try {
+      await refetchLocations();
+    } finally {
+      stopOverlay();
     }
   };
 
@@ -284,6 +316,8 @@ export default function Home() {
 
     if (submitting) return;
     setSubmitting(true);
+    setOverlayText("Mengirim absensi…");
+    // submitting sendiri akan menyalakan overlay (showOverlay = true)
 
     try {
       if (regStatus !== "ok") {
@@ -387,6 +421,7 @@ export default function Home() {
       setMsg("❌ " + serverMsg);
     } finally {
       setSubmitting(false);
+      stopOverlay();
     }
   };
 
@@ -394,9 +429,8 @@ export default function Home() {
     <div className="max-w-2xl mx-auto p-4 space-y-6 relative">
       {/* Overlay Fullscreen */}
       {showOverlay && (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] flex items-center justify-center">
+        <div className="fixed inset-0 z-[9999] bg-black/55 backdrop-blur-[1px] flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
-            {/* Spinner */}
             <svg
               className="animate-spin h-10 w-10"
               viewBox="0 0 24 24"
@@ -418,17 +452,7 @@ export default function Home() {
                 strokeLinecap="round"
               />
             </svg>
-            <div className="text-sm text-neutral-200">
-              {submitting
-                ? "Mengirim absensi…"
-                : regStatus === "registering"
-                ? "Mendaftarkan perangkat…"
-                : isLocLoading
-                ? "Memuat lokasi…"
-                : geo.status === "requesting"
-                ? "Mengambil lokasi GPS…"
-                : "Memproses…"}
-            </div>
+            <div className="text-sm text-neutral-200">{overlayText}</div>
           </div>
         </div>
       )}
@@ -528,17 +552,10 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Button
               type="button"
-              onClick={() => {
-                setMsg("");
-                if (!isLocLoading) refetchLocations();
-              }}
-              disabled={isLocLoading || showOverlay}
+              onClick={onLoadLocations}
+              disabled={showOverlay}
             >
-              {isLocLoading
-                ? "Memuat Lokasi..."
-                : isLocFetched
-                ? "Muat Ulang Lokasi"
-                : "Muat Lokasi dari Server"}
+              {isLocFetched ? "Muat Ulang Lokasi" : "Muat Lokasi dari Server"}
             </Button>
             <div className="text-xs text-neutral-500">
               {isLocFetched
@@ -578,8 +595,8 @@ export default function Home() {
                   </>
                 ) : geo.status === "idle" ? (
                   "Belum diambil"
-                ) : geo.status === "requesting" ? (
-                  "Mengambil lokasi..."
+                ) : geo.status.startsWith("error") ? (
+                  geo.status
                 ) : (
                   geo.status
                 )}
