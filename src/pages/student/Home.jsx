@@ -20,6 +20,76 @@ import {
   useMap,
 } from "react-leaflet";
 
+const MP_WASM_URL =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm";
+const MP_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/face_detector/face_detector/float16/1/face_detector.tflite";
+
+let __mp = null;
+let __fileset = null;
+let __faceDetector = null;
+
+async function ensureFaceDetector() {
+  if (!__mp) {
+    __mp = await import(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest"
+    );
+  }
+  if (!__fileset) {
+    __fileset = await __mp.FilesetResolver.forVisionTasks(MP_WASM_URL);
+  }
+  if (!__faceDetector) {
+    __faceDetector = await __mp.FaceDetector.createFromOptions(__fileset, {
+      baseOptions: { modelAssetPath: MP_MODEL_URL },
+      runningMode: "IMAGE",
+      minDetectionConfidence: 0.4,
+    });
+    // Warm-up kecil (opsional): tidak wajib
+  }
+  return __faceDetector;
+}
+
+// Kompres ke JPEG + ambil ImageData untuk deteksi (tanpa EXIF)
+async function compressAndImageData(
+  file,
+  { maxDim = 1600, quality = 0.82 } = {}
+) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const blob = await new Promise((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", quality)
+  );
+  return { imageData, blob, width: w, height: h };
+}
+
+// Ambang area bbox (px^2), disamakan dengan server default
+const MIN_FACE_AREA = 1200;
+
+async function faceOkOnImageData(imageData, minArea = MIN_FACE_AREA) {
+  const fd = await ensureFaceDetector();
+  const out = await fd.detect(imageData);
+  if (!out?.detections?.length) return false;
+  return out.detections.some((d) => {
+    const b = d.boundingBox;
+    if (!b) return false;
+    const area = Math.round(Math.max(0, b.width) * Math.max(0, b.height));
+    return area >= minArea;
+  });
+}
+
+/* =========================
+   Utilities yang sudah ada
+   ========================= */
 function isGoogleDriveUrl(raw) {
   if (!raw) return false;
   const urlStr = String(raw).trim();
@@ -127,7 +197,7 @@ export default function Home() {
   const [regStatus, setRegStatus] = useState("idle");
   const [submitting, setSubmitting] = useState(false);
 
-  // === Overlay manual untuk SEMUA aksi tombol ===
+  // Overlay manual global
   const [blocking, setBlocking] = useState(false);
   const [overlayText, setOverlayText] = useState("Memproses…");
   const overlayTimeoutRef = useRef(null);
@@ -137,7 +207,6 @@ export default function Home() {
     setOverlayText(text);
     setBlocking(true);
     if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current);
-    // safety: auto-matikan overlay kalau aksi menggantung
     overlayTimeoutRef.current = setTimeout(() => {
       setBlocking(false);
     }, timeoutMs);
@@ -150,7 +219,10 @@ export default function Home() {
     }
   };
 
-  // === Lokasi: fetch HANYA saat diklik ===
+  // MediaPipe state (frontend face detection)
+  const [faceOK, setFaceOK] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState("");
+  // Lokasi: fetch manual saat diklik
   const {
     data: locations = [],
     refetch: refetchLocations,
@@ -185,7 +257,7 @@ export default function Home() {
   const [photo, setPhoto] = useState(null);
   const [msg, setMsg] = useState("");
 
-  // ==== Validasi realtime (sore) ====
+  // Validasi realtime (sore)
   const hasilDiskusiTrim = useMemo(
     () => String(soreExtra.hasil_diskusi || "").trim(),
     [soreExtra.hasil_diskusi]
@@ -317,7 +389,6 @@ export default function Home() {
     if (submitting) return;
     setSubmitting(true);
     setOverlayText("Mengirim absensi…");
-    // submitting sendiri akan menyalakan overlay (showOverlay = true)
 
     try {
       if (regStatus !== "ok") {
@@ -332,6 +403,10 @@ export default function Home() {
       }
       if (!photo) {
         setMsg("Ambil/unggah foto wajah.");
+        return;
+      }
+      if (!faceOK) {
+        setMsg("Foto belum valid: pastikan wajah terdeteksi.");
         return;
       }
       if (!locId) {
@@ -856,14 +931,76 @@ export default function Home() {
                 type="file"
                 accept="image/*"
                 capture="environment"
-                onChange={(e) =>
-                  setPhoto((e.target.files && e.target.files[0]) || null)
-                }
+                onChange={async (e) => {
+                  const f = (e.target.files && e.target.files[0]) || null;
+                  setMsg("");
+                  setFaceOK(false);
+                  setPhotoPreview("");
+
+                  if (!f) {
+                    setPhoto(null);
+                    return;
+                  }
+
+                  try {
+                    startOverlay("Memeriksa wajah…", 15000);
+                    // Siapkan detektor (WASM via CDN)
+                    await ensureFaceDetector();
+
+                    // Kompres -> JPEG + ambil ImageData
+                    const { imageData, blob } = await compressAndImageData(f, {
+                      maxDim: 1600,
+                      quality: 0.82,
+                    });
+
+                    // Deteksi wajah
+                    const ok = await faceOkOnImageData(imageData);
+                    setFaceOK(ok);
+
+                    if (ok) {
+                      const jf = new File([blob], "photo.jpg", {
+                        type: "image/jpeg",
+                      });
+                      setPhoto(jf);
+                      const url = URL.createObjectURL(jf);
+                      setPhotoPreview(url);
+                      setMsg("✔ Wajah terdeteksi. Foto siap dikirim.");
+                    } else {
+                      setPhoto(null);
+                      setMsg(
+                        "✘ Tidak ada wajah terdeteksi / terlalu kecil. Ambil foto lebih dekat."
+                      );
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    setPhoto(null);
+                    setMsg("Gagal memproses foto di perangkat.");
+                  } finally {
+                    stopOverlay();
+                  }
+                }}
                 disabled={showOverlay}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Saat dibuka di HP, ini akan langsung menawarkan kamera.
               </div>
+
+              {photoPreview && (
+                <div className="mt-2 flex items-center gap-3">
+                  <img
+                    src={photoPreview}
+                    alt="preview"
+                    className="h-20 w-20 object-cover rounded-md border border-neutral-800"
+                  />
+                  <div
+                    className={
+                      "text-sm " + (faceOK ? "text-green-400" : "text-red-400")
+                    }
+                  >
+                    {faceOK ? "Wajah OK" : "Wajah belum terdeteksi"}
+                  </div>
+                </div>
+              )}
             </label>
           </div>
 
@@ -871,7 +1008,7 @@ export default function Home() {
           <Button
             className="w-full"
             type="submit"
-            disabled={showOverlay || regStatus !== "ok"}
+            disabled={showOverlay || regStatus !== "ok" || !faceOK}
           >
             {regStatus !== "ok"
               ? "Kirim Absensi (perlu registrasi device)"
