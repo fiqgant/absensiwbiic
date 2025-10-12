@@ -125,9 +125,9 @@ export default function Home() {
     }
   });
   const [regStatus, setRegStatus] = useState("idle");
-  const [submitting, setSubmitting] = useState(false); // hanya kunci submit
+  const [submitting, setSubmitting] = useState(false);
 
-  // === Lokasi: fetch HANYA saat diklik & non-blocking ===
+  // === Lokasi: fetch HANYA saat diklik ===
   const {
     data: locations = [],
     refetch: refetchLocations,
@@ -136,12 +136,10 @@ export default function Home() {
   } = useQuery({
     queryKey: ["locs-public"],
     queryFn: getLocationsPublic,
-    enabled: false,         // manual fetch (via tombol)
-    retry: false,           // jangan auto-retry
+    enabled: false,
     staleTime: 0,
     gcTime: 30 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    suspense: false,        // penting: jangan trigger Suspense overlay
+    retry: false,
   });
 
   const [locId, setLocId] = useState("");
@@ -219,6 +217,17 @@ export default function Home() {
     return [-6.2, 106.816666];
   }, [selectedLoc, geo.status, geo.lat, geo.lon]);
 
+  // === Overlay global muncul saat ada aksi in-flight:
+  // - register device
+  // - muat lokasi
+  // - ambil GPS
+  // - submit absensi
+  const showOverlay =
+    submitting ||
+    regStatus === "registering" ||
+    isLocLoading ||
+    geo.status === "requesting";
+
   const getGPS = () => {
     setMsg("");
     if (!("geolocation" in navigator)) {
@@ -255,12 +264,12 @@ export default function Home() {
 
   const onGetDevice = async () => {
     setMsg("");
-    if (regStatus === "registering") return; // cegah spam klik
+    if (regStatus === "registering") return;
     try {
       const id = getDeviceId();
       setDeviceId(id);
       setRegStatus("registering");
-      await registerDevice(id); // hanya saat tombol diklik
+      await registerDevice(id);
       setRegStatus("ok");
       setMsg("Perangkat terdaftar untuk hari ini. ✔️");
     } catch {
@@ -273,12 +282,14 @@ export default function Home() {
     e.preventDefault();
     setMsg("");
 
-    if (submitting) return; // cegah double-click
+    if (submitting) return;
     setSubmitting(true);
 
     try {
       if (regStatus !== "ok") {
-        setMsg('Klik "Get Device ID" terlebih dahulu untuk registrasi perangkat.');
+        setMsg(
+          'Klik "Get Device ID" terlebih dahulu untuk registrasi perangkat.'
+        );
         return;
       }
       if (!geo.lat || !geo.lon) {
@@ -334,7 +345,6 @@ export default function Home() {
         }
       }
 
-      // API token & submit: hanya saat user klik "Kirim Absensi"
       const token = await issueToken({
         device_id: deviceId,
         nim: form.nim,
@@ -381,7 +391,48 @@ export default function Home() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-6">
+    <div className="max-w-2xl mx-auto p-4 space-y-6 relative">
+      {/* Overlay Fullscreen */}
+      {showOverlay && (
+        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            {/* Spinner */}
+            <svg
+              className="animate-spin h-10 w-10"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-90"
+                d="M4 12a8 8 0 018-8"
+                stroke="currentColor"
+                strokeWidth="4"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="text-sm text-neutral-200">
+              {submitting
+                ? "Mengirim absensi…"
+                : regStatus === "registering"
+                ? "Mendaftarkan perangkat…"
+                : isLocLoading
+                ? "Memuat lokasi…"
+                : geo.status === "requesting"
+                ? "Mengambil lokasi GPS…"
+                : "Memproses…"}
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card title="Absensi Entrepreneurship (Rabu)">
         {/* Seksi registrasi device */}
         <div className="mb-4 p-3 rounded-lg border border-neutral-800 bg-neutral-900/40">
@@ -389,7 +440,7 @@ export default function Home() {
             <Button
               type="button"
               onClick={onGetDevice}
-              disabled={regStatus === "registering"}
+              disabled={regStatus === "registering" || showOverlay}
             >
               {regStatus === "registering"
                 ? "Mendaftarkan..."
@@ -467,6 +518,7 @@ export default function Home() {
             label="Sesi"
             value={jenis}
             onChange={(e) => setJenis(e.target.value)}
+            disabled={showOverlay}
           >
             <option value="pagi">Pagi (10-12)</option>
             <option value="sore">Sore (16-18)</option>
@@ -478,9 +530,9 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setMsg("");
-                if (!isLocLoading) refetchLocations(); // non-blocking
+                if (!isLocLoading) refetchLocations();
               }}
-              disabled={isLocLoading}
+              disabled={isLocLoading || showOverlay}
             >
               {isLocLoading
                 ? "Memuat Lokasi..."
@@ -499,7 +551,7 @@ export default function Home() {
             label="Lokasi"
             value={locId}
             onChange={(e) => setLocId(e.target.value)}
-            disabled={!isLocFetched || locations.length === 0}
+            disabled={!isLocFetched || locations.length === 0 || showOverlay}
           >
             <option value="">
               {isLocFetched ? "Pilih lokasi" : "Muat lokasi dulu"}
@@ -515,7 +567,7 @@ export default function Home() {
           <div>
             <div className="mb-1 text-sm text-neutral-400">Lokasi Saya</div>
             <div className="flex items-center gap-2">
-              <Button type="button" onClick={getGPS}>
+              <Button type="button" onClick={getGPS} disabled={showOverlay}>
                 Ambil Lokasi
               </Button>
               <div className="text-xs text-neutral-400">
@@ -541,6 +593,7 @@ export default function Home() {
               value={form.nama}
               onChange={(e) => setForm((f) => ({ ...f, nama: e.target.value }))}
               required
+              disabled={showOverlay}
             />
 
             <div>
@@ -552,6 +605,7 @@ export default function Home() {
                 pattern="[0-9]+"
                 placeholder="contoh: 23123456"
                 required
+                disabled={showOverlay}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 NIM harus berisi angka saja.
@@ -564,6 +618,7 @@ export default function Home() {
               onChange={(e) =>
                 setForm((f) => ({ ...f, semester: e.target.value }))
               }
+              disabled={showOverlay}
             >
               <option value="1">1</option>
               <option value="3">3</option>
@@ -578,6 +633,7 @@ export default function Home() {
                   setForm((f) => ({ ...f, nama_kelompok: e.target.value }))
                 }
                 required
+                disabled={showOverlay}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Apabila belum tergabung dalam kelompok, isi dengan tanda “-”.
@@ -593,6 +649,7 @@ export default function Home() {
                   setForm((f) => ({ ...f, nama_fasilitator: v }));
                   if (v !== "Lainnya") setFasilitatorOther("");
                 }}
+                disabled={showOverlay}
               >
                 {FASILITATORS.map((name) => (
                   <option key={name} value={name}>
@@ -606,17 +663,18 @@ export default function Home() {
               </div>
             </div>
 
-            {form.nama_fasilitator === "Lainnya" dan (
+            {form.nama_fasilitator === "Lainnya" && (
               <Input
                 label="Isi Nama Fasilitator (Lainnya)"
                 value={fasilitatorOther}
                 onChange={(e) => setFasilitatorOther(e.target.value)}
                 placeholder="Nama fasilitator"
+                disabled={showOverlay}
               />
             )}
           </div>
 
-          {jenis === "sore" dan (
+          {jenis === "sore" && (
             <div className="grid gap-3">
               <div>
                 <Input
@@ -637,6 +695,7 @@ export default function Home() {
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
                   placeholder="Tuliskan ringkasan hasil diskusi (≥120 karakter)"
+                  disabled={showOverlay}
                 />
                 <div
                   className={
@@ -693,6 +752,7 @@ export default function Home() {
                     );
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
+                  disabled={showOverlay}
                 />
                 <div
                   className={
@@ -748,6 +808,7 @@ export default function Home() {
                     );
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
+                  disabled={showOverlay}
                 />
                 <div
                   className={
@@ -781,7 +842,7 @@ export default function Home() {
                 onChange={(e) =>
                   setPhoto((e.target.files && e.target.files[0]) || null)
                 }
-                disabled={submitting} // hanya file input yang dikunci saat submit
+                disabled={showOverlay}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Saat dibuka di HP, ini akan langsung menawarkan kamera.
@@ -790,7 +851,11 @@ export default function Home() {
           </div>
 
           {msg && <div className="text-sm">{msg}</div>}
-          <Button className="w-full" type="submit" disabled={submitting || regStatus !== "ok"}>
+          <Button
+            className="w-full"
+            type="submit"
+            disabled={showOverlay || regStatus !== "ok"}
+          >
             {regStatus !== "ok"
               ? "Kirim Absensi (perlu registrasi device)"
               : submitting
