@@ -125,6 +125,7 @@ export default function Home() {
     }
   });
   const [regStatus, setRegStatus] = useState("idle");
+  const [submitting, setSubmitting] = useState(false); // <-- NEW
 
   // === Lokasi: fetch HANYA saat diklik ===
   const {
@@ -135,9 +136,10 @@ export default function Home() {
   } = useQuery({
     queryKey: ["locs-public"],
     queryFn: getLocationsPublic,
-    enabled: false, // <-- penting: jangan auto fetch
+    enabled: false, // jangan auto fetch
     staleTime: 0,
     gcTime: 30 * 60 * 1000,
+    retry: false, // <-- NEW: jangan auto-retry diam-diam
   });
 
   const [locId, setLocId] = useState("");
@@ -194,7 +196,6 @@ export default function Home() {
     }
   }, [regStatus]);
 
-  // Set default locId hanya setelah user memuat lokasi
   useEffect(() => {
     if (!locId && locations.length) setLocId(String(locations[0].id));
   }, [locations, locId]);
@@ -252,11 +253,12 @@ export default function Home() {
 
   const onGetDevice = async () => {
     setMsg("");
+    if (regStatus === "registering") return; // <-- NEW: cegah spam klik
     try {
       const id = getDeviceId();
       setDeviceId(id);
       setRegStatus("registering");
-      await registerDevice(id); // <-- hanya saat tombol diklik
+      await registerDevice(id); // hanya saat tombol diklik
       setRegStatus("ok");
       setMsg("Perangkat terdaftar untuk hari ini. ✔️");
     } catch {
@@ -269,66 +271,69 @@ export default function Home() {
     e.preventDefault();
     setMsg("");
 
-    if (regStatus !== "ok") {
-      setMsg(
-        'Klik "Get Device ID" terlebih dahulu untuk registrasi perangkat.'
-      );
-      return;
-    }
-    if (!geo.lat || !geo.lon) {
-      setMsg("Ambil lokasi GPS dulu.");
-      return;
-    }
-    if (!photo) {
-      setMsg("Ambil/unggah foto wajah.");
-      return;
-    }
-    if (!locId) {
-      setMsg("Pilih lokasi.");
-      return;
-    }
-    if (!form.nim || !/^\d+$/.test(form.nim)) {
-      setMsg("NIM harus berupa angka.");
-      return;
-    }
-
-    let finalFasilitator = form.nama_fasilitator;
-    if (finalFasilitator === "Lainnya") {
-      if (!fasilitatorOther.trim()) {
-        setMsg('Isi nama fasilitator pada kolom "Lainnya".');
-        return;
-      }
-      finalFasilitator = fasilitatorOther.trim();
-    }
-
-    let trimmedLinkGdrive = "";
-    if (jenis === "sore") {
-      if (!isHasilDiskusiValid) {
-        setMsg("Hasil Diskusi wajib diisi minimal 120 karakter.");
-        return;
-      }
-
-      trimmedLinkGdrive = linkGDriveTrim;
-      if (!isLinkGDriveValid) {
-        setMsg(
-          !isLinkGDriveFilled
-            ? "Link GDrive Foto Diskusi wajib diisi."
-            : "Link GDrive Foto Diskusi harus berupa tautan Google Drive/Docs yang valid."
-        );
-        return;
-      }
-
-      if (!isLinkKegiatanValid) {
-        setMsg(
-          !isLinkKegiatanFilled
-            ? "Link Foto Kegiatan wajib diisi."
-            : "Link Foto Kegiatan harus tautan Google Drive/Docs yang valid."
-        );
-        return;
-      }
-    }
+    if (submitting) return; // <-- NEW: cegah double-click
+    setSubmitting(true); // <-- NEW
 
     try {
+      if (regStatus !== "ok") {
+        setMsg(
+          'Klik "Get Device ID" terlebih dahulu untuk registrasi perangkat.'
+        );
+        return;
+      }
+      if (!geo.lat || !geo.lon) {
+        setMsg("Ambil lokasi GPS dulu.");
+        return;
+      }
+      if (!photo) {
+        setMsg("Ambil/unggah foto wajah.");
+        return;
+      }
+      if (!locId) {
+        setMsg("Pilih lokasi.");
+        return;
+      }
+      if (!form.nim || !/^\d+$/.test(form.nim)) {
+        setMsg("NIM harus berupa angka.");
+        return;
+      }
+
+      let finalFasilitator = form.nama_fasilitator;
+      if (finalFasilitator === "Lainnya") {
+        if (!fasilitatorOther.trim()) {
+          setMsg('Isi nama fasilitator pada kolom "Lainnya".');
+          return;
+        }
+        finalFasilitator = fasilitatorOther.trim();
+      }
+
+      let trimmedLinkGdrive = "";
+      if (jenis === "sore") {
+        if (!isHasilDiskusiValid) {
+          setMsg("Hasil Diskusi wajib diisi minimal 120 karakter.");
+          return;
+        }
+
+        trimmedLinkGdrive = linkGDriveTrim;
+        if (!isLinkGDriveValid) {
+          setMsg(
+            !isLinkGDriveFilled
+              ? "Link GDrive Foto Diskusi wajib diisi."
+              : "Link GDrive Foto Diskusi harus berupa tautan Google Drive/Docs yang valid."
+          );
+          return;
+        }
+
+        if (!isLinkKegiatanValid) {
+          setMsg(
+            !isLinkKegiatanFilled
+              ? "Link Foto Kegiatan wajib diisi."
+              : "Link Foto Kegiatan harus tautan Google Drive/Docs yang valid."
+          );
+          return;
+        }
+      }
+
       // API token & submit: hanya saat user klik "Kirim Absensi"
       const token = await issueToken({
         device_id: deviceId,
@@ -370,6 +375,8 @@ export default function Home() {
         (e && e.message) ||
         "Gagal submit";
       setMsg("❌ " + serverMsg);
+    } finally {
+      setSubmitting(false); // <-- NEW
     }
   };
 
@@ -392,7 +399,8 @@ export default function Home() {
               {deviceId ? (
                 <>
                   Device ID:{" "}
-                  <span className="text-neutral-200">{deviceId}</span> • Status:{" "}
+                  <span className="text-neutral-2 00">{deviceId}</span> •
+                  Status:{" "}
                   {regStatus === "ok"
                     ? "Terdaftar hari ini"
                     : regStatus === "registering"
@@ -471,7 +479,7 @@ export default function Home() {
               type="button"
               onClick={() => {
                 setMsg("");
-                refetchLocations();
+                if (!isLocLoading) refetchLocations(); // <-- NEW guard
               }}
               disabled={isLocLoading}
             >
@@ -508,7 +516,7 @@ export default function Home() {
           <div>
             <div className="mb-1 text-sm text-neutral-400">Lokasi Saya</div>
             <div className="flex items-center gap-2">
-              <Button type="button" onClick={getGPS}>
+              <Button type="button" onClick={getGPS} disabled={submitting}>
                 Ambil Lokasi
               </Button>
               <div className="text-xs text-neutral-400">
@@ -534,6 +542,7 @@ export default function Home() {
               value={form.nama}
               onChange={(e) => setForm((f) => ({ ...f, nama: e.target.value }))}
               required
+              disabled={submitting}
             />
 
             <div>
@@ -545,6 +554,7 @@ export default function Home() {
                 pattern="[0-9]+"
                 placeholder="contoh: 23123456"
                 required
+                disabled={submitting}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 NIM harus berisi angka saja.
@@ -557,6 +567,7 @@ export default function Home() {
               onChange={(e) =>
                 setForm((f) => ({ ...f, semester: e.target.value }))
               }
+              disabled={submitting}
             >
               <option value="1">1</option>
               <option value="3">3</option>
@@ -571,6 +582,7 @@ export default function Home() {
                   setForm((f) => ({ ...f, nama_kelompok: e.target.value }))
                 }
                 required
+                disabled={submitting}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Apabila belum tergabung dalam kelompok, isi dengan tanda “-”.
@@ -586,6 +598,7 @@ export default function Home() {
                   setForm((f) => ({ ...f, nama_fasilitator: v }));
                   if (v !== "Lainnya") setFasilitatorOther("");
                 }}
+                disabled={submitting}
               >
                 {FASILITATORS.map((name) => (
                   <option key={name} value={name}>
@@ -605,6 +618,7 @@ export default function Home() {
                 value={fasilitatorOther}
                 onChange={(e) => setFasilitatorOther(e.target.value)}
                 placeholder="Nama fasilitator"
+                disabled={submitting}
               />
             )}
           </div>
@@ -630,6 +644,7 @@ export default function Home() {
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
                   placeholder="Tuliskan ringkasan hasil diskusi (≥120 karakter)"
+                  disabled={submitting}
                 />
                 <div
                   className={
@@ -686,6 +701,7 @@ export default function Home() {
                     );
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
+                  disabled={submitting}
                 />
                 <div
                   className={
@@ -741,6 +757,7 @@ export default function Home() {
                     );
                   }}
                   onInput={(e) => e.currentTarget.setCustomValidity("")}
+                  disabled={submitting}
                 />
                 <div
                   className={
@@ -774,6 +791,7 @@ export default function Home() {
                 onChange={(e) =>
                   setPhoto((e.target.files && e.target.files[0]) || null)
                 }
+                disabled={submitting}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Saat dibuka di HP, ini akan langsung menawarkan kamera.
@@ -782,10 +800,16 @@ export default function Home() {
           </div>
 
           {msg && <div className="text-sm">{msg}</div>}
-          <Button className="w-full" type="submit">
-            {regStatus === "ok"
-              ? "Kirim Absensi"
-              : "Kirim Absensi (perlu registrasi device)"}
+          <Button
+            className="w-full"
+            type="submit"
+            disabled={submitting || regStatus !== "ok"}
+          >
+            {regStatus !== "ok"
+              ? "Kirim Absensi (perlu registrasi device)"
+              : submitting
+              ? "Mengirim..."
+              : "Kirim Absensi"}
           </Button>
         </form>
       </Card>
