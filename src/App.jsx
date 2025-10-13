@@ -1,9 +1,4 @@
-import {
-  HashRouter as Router,
-  Routes,
-  Route,
-  Navigate,
-} from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./auth/useAuth";
 import PrivateRoute from "./auth/PrivateRoute";
 import Topbar from "./components/Topbar";
@@ -32,31 +27,25 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <Analytics />
-      <Router>
-        <Topbar admin={admin} onLogout={onLogout} />
-        <Routes>
-          {/* Mahasiswa */}
-          <Route path="/" element={<Home />} />
-
-          {/* Admin */}
-          <Route path="/admin/login" element={<Login onLogin={onLogin} />} />
-          <Route element={<PrivateRoute ready={ready} admin={admin} />}>
-            <Route
-              path="/admin"
-              element={<Navigate to="/admin/attendance" replace />}
-            />
-            <Route path="/admin/attendance" element={<Attendance />} />
-            <Route path="/admin/locations" element={<Locations />} />
-            <Route path="/admin/compare" element={<Compare />} />
-            <Route path="/admin/report" element={<Report />} />
-          </Route>
-
+      <Topbar admin={admin} onLogout={onLogout} />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/admin/login" element={<Login onLogin={onLogin} />} />
+        <Route element={<PrivateRoute ready={ready} admin={admin} />}>
           <Route
-            path="*"
-            element={<div className="p-6 text-neutral-400">404</div>}
+            path="/admin"
+            element={<Navigate to="/admin/attendance" replace />}
           />
-        </Routes>
-      </Router>
+          <Route path="/admin/attendance" element={<Attendance />} />
+          <Route path="/admin/locations" element={<Locations />} />
+          <Route path="/admin/compare" element={<Compare />} />
+          <Route path="/admin/report" element={<Report />} />
+        </Route>
+        <Route
+          path="*"
+          element={<div className="p-6 text-neutral-400">404</div>}
+        />
+      </Routes>
     </div>
   );
 }
