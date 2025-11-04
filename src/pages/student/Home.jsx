@@ -314,16 +314,22 @@ export default function Home() {
   const getGPS = () => {
     setMsg("");
     setOverlayText("Mengambil lokasi GPS…");
-    startOverlay("Mengambil lokasi GPS…", 12000);
+    // Overlay juga dilonggarkan supaya tidak hilang duluan
+    startOverlay("Mengambil lokasi GPS…", 610000); // 10 menit + sedikit buffer
+
     if (!("geolocation" in navigator)) {
       setGeo({
         lat: null,
         lon: null,
-        status: "error: Geolocation tidak didukung",
+        status: "error: Geolocation tidak didukung di browser ini.",
       });
+      setMsg(
+        "Perangkat/browser kamu tidak mendukung fitur lokasi. Coba gunakan browser lain atau perangkat lain."
+      );
       stopOverlay();
       return;
     }
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setGeo({
@@ -331,18 +337,43 @@ export default function Home() {
           lon: pos.coords.longitude,
           status: "ok",
         });
+        setMsg("✔ Lokasi berhasil diambil. Silakan lanjut isi absensi.");
         stopOverlay();
       },
       (err) => {
+        let statusMsg =
+          "error: " + (err && err.message ? err.message : "tidak diketahui");
+        let userMsg =
+          "Gagal mengambil lokasi. Pastikan GPS/lokasi aktif lalu coba lagi.";
+
+        // code === 1: PERMISSION_DENIED, 2: POSITION_UNAVAILABLE, 3: TIMEOUT
+        if (err?.code === 1) {
+          userMsg =
+            "Izin lokasi ditolak. Aktifkan izin lokasi untuk browser ini, lalu klik 'Ambil Lokasi' lagi.";
+        } else if (err?.code === 2) {
+          userMsg =
+            "Lokasi tidak tersedia. Coba pindah ke area yang lebih terbuka, nyalakan GPS, lalu coba lagi.";
+        } else if (err?.code === 3) {
+          statusMsg = "error: Timeout mengambil lokasi.";
+          userMsg =
+            "Tidak bisa mendapatkan lokasi dalam batas waktu. Nyalakan GPS/lokasi, pastikan sinyal bagus (tidak di dalam ruangan tebal), lalu klik 'Ambil Lokasi' lagi.";
+        }
+
+        console.log("Geo error", err?.code, err?.message);
         setGeo({
           lat: null,
           lon: null,
-          status:
-            "error: " + (err && err.message ? err.message : "tidak diketahui"),
+          status: statusMsg,
         });
+        setMsg(userMsg);
         stopOverlay();
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      {
+        // Tidak terlalu memaksa high accuracy
+        enableHighAccuracy: false,
+        timeout: 600000, // 10 menit
+        maximumAge: 60000, // boleh pakai lokasi cache ≤ 1 menit
+      }
     );
   };
 
@@ -662,6 +693,10 @@ export default function Home() {
               <Button type="button" onClick={getGPS} disabled={showOverlay}>
                 Ambil Lokasi
               </Button>
+              <div className="text-xs text-neutral-500 mt-1">
+                Pastikan GPS/lokasi di HP sudah aktif, izinkan akses lokasi
+                untuk browser ini, lalu klik "Ambil Lokasi".
+              </div>
               <div className="text-xs text-neutral-400">
                 {geo.status === "ok" ? (
                   <>
